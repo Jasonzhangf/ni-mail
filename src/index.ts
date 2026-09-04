@@ -1,5 +1,5 @@
 import PostalMime from "postal-mime";
-import type { Env, IncomingEmailPayload, StoredAttachmentInput } from "./types";
+import type { Env, IncomingEmailPayload } from "./types";
 import { MailboxDO } from "./mailbox-do";
 import {
   assertAuthorized,
@@ -14,7 +14,6 @@ import {
   parseJson,
   resolveMailbox,
   serverError,
-  toBase64,
   unauthorized,
 } from "./utils";
 
@@ -84,6 +83,12 @@ export default {
         const emailMatch = subPath.match(/^\/emails\/([^/]+)$/);
         if (request.method === "GET" && emailMatch) {
           return proxyToMailbox(env, mailboxId, `/internal/emails/${encodeURIComponent(decodeURIComponent(emailMatch[1]!))}`);
+        }
+
+        if (request.method === "DELETE" && emailMatch) {
+          return proxyToMailbox(env, mailboxId, `/internal/emails/${encodeURIComponent(decodeURIComponent(emailMatch[1]!))}`, {
+            method: "DELETE",
+          });
         }
 
         const readMatch = subPath.match(/^\/emails\/([^/]+)\/read$/);
@@ -157,14 +162,6 @@ export default {
       const subject = parsed.subject ?? "(no subject)";
       const bodyText = parsed.text ?? "";
       const bodyHtml = parsed.html ?? "";
-      const attachments: StoredAttachmentInput[] = (parsed.attachments ?? []).map((attachment) => ({
-        filename: attachment.filename ?? "attachment.bin",
-        type: attachment.mimeType ?? "application/octet-stream",
-        disposition: attachment.disposition === "inline" ? "inline" : "attachment",
-        contentId: attachment.contentId ?? undefined,
-        contentBase64: toBase64(attachment.content ?? new Uint8Array()),
-      }));
-
       const payload: IncomingEmailPayload = {
         id: crypto.randomUUID(),
         folderId: "inbox",
@@ -181,7 +178,9 @@ export default {
         inReplyTo: normalizeMessageId(headers["in-reply-to"] ?? ""),
         references: headers["references"] ?? null,
         rawHeaders: headers,
-        attachments,
+        // Inbound attachments are intentionally not persisted. Keep the mail body and
+        // metadata, but do not write attachment bytes to R2 for this mailbox path.
+        attachments: [],
       };
 
       const response = await proxyToMailbox(env, mailbox, `/internal/incoming`, {

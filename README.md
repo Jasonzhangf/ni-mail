@@ -119,6 +119,9 @@ custom_domain = true
 | GET | `/mails?limit=10` | 取得最近 N 封郵件列表（不含正文） |
 | GET | `/mail/:id` | 取得單封完整郵件（含 html/text） |
 | DELETE | `/mails` | 清空收件匣 |
+| DELETE | `/api/mailboxes/{mailbox}/emails/{id}` | 刪除指定單封郵件及其附件 |
+
+入站邮件只保留正文和元数据，附件字节不会写入 R2。精确删除接口供本地 WorkerMail Skill 在成功完成本地全量拉取和解析后使用；不要用清空收件匣接口代替它。
 
 **範例**
 

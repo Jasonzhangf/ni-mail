@@ -144,6 +144,10 @@ export class MailboxDO extends DurableObject {
         return email ? json(email) : notFound();
       }
 
+      if (request.method === "DELETE" && emailMatch) {
+        return json(await this.deleteEmail(decodeURIComponent(emailMatch[1]!)));
+      }
+
       if (request.method === "POST" && emailMatch && url.pathname.endsWith("/read") === false) {
         return badRequest("unsupported email mutation");
       }
@@ -645,6 +649,21 @@ export class MailboxDO extends DurableObject {
     const emails = this.all<{ id: string }>(`SELECT id FROM emails WHERE folder_id = ?`, folderId);
     this.sql.exec(`DELETE FROM emails WHERE folder_id = ?`, folderId);
     return emails.length;
+  }
+
+  private async deleteEmail(id: string): Promise<{ ok: true; deleted: boolean }> {
+    const email = this.one<{ id: string }>(`SELECT id FROM emails WHERE id = ? LIMIT 1`, id);
+    if (!email) return { ok: true, deleted: false };
+
+    const attachmentRows = this.all<StoredAttachmentRecord>(
+      `SELECT * FROM attachments WHERE email_id = ?`,
+      id,
+    );
+    if (attachmentRows.length > 0) {
+      await this.env.BUCKET.delete(attachmentRows.map((row) => row.r2_key));
+    }
+    this.sql.exec(`DELETE FROM emails WHERE id = ?`, id);
+    return { ok: true, deleted: true };
   }
 
   private resolveThreadId(params: {
